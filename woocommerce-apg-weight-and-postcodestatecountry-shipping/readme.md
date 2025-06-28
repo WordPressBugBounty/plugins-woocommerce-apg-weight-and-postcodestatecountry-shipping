@@ -9,11 +9,11 @@ Requires at least: 5.0
 
 Tested up to: 6.9
 
-Stable tag: 3.2.1
+Stable tag: 3.3
 
 WC requires at least: 5.6
 
-WC tested up to: 9.9
+WC tested up to: 9.9.4
 
 License: GPLv2 or later
 
@@ -105,6 +105,17 @@ Si necesitas ayuda para configurar o instalar **WC - APG Weight Shipping**, **Ar
 *En ningún caso **Art Project Group** proporciona ningún tipo de soporte técnico gratuito.*
 
 ## Changelog
+### 3.3
+* Añadida opción para crear tarifas con peso mínimo distinto de cero.
+* Añadida opción para crear tarifas repetitivas con un número máximo de tarifas.
+* Mejorada la opción de depuración.
+* Añadida opción de copiado del texto de depuración al portapapeles.
+* Mejora de la seguridad.
+* Mejora de rendimiento general.
+* Adecuación completa del código a los estándares de seguridad marcadas por WordPress.
+* Añade soporte al bloque Finalizar compra.
+* Pequeños arreglos.
+
 ### 3.2.1
 * Versión 2.6.5 temporalmente restablecida.
 
@@ -112,7 +123,7 @@ Si necesitas ayuda para configurar o instalar **WC - APG Weight Shipping**, **Ar
 * Corrección en el cálculo de tarifas.
 
 ### 3.2
-* Refactorización del código encargado de gestionar las tarifas y realizar el cálculo del total del gasto de envío.
+* Reprogramación del código encargado de gestionar las tarifas y realizar el cálculo del total del gasto de envío.
 * Añadida opción de copiado del texto de depuración al portapapeles.
 
 ### 3.1

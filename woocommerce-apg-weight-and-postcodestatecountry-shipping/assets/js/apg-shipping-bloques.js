@@ -1,11 +1,27 @@
 jQuery(function($) {
-	function actualizarIconosAPG() {
-		$('input[type="radio"][name^="radio-control-"]').each(function() {
+    // Solo aplica en la página del carrito
+    if ( $('body').hasClass('woocommerce-cart') ) {
+        // Inyecta el CSS personalizado
+        const estiloAPG = `
+            .wc-block-components-radio-control__option.wc-block-components-radio-control__option-checked {
+                padding-right: 0;
+            }
+        `;
+        const styleTag = document.createElement('style');
+        styleTag.type = 'text/css';
+        styleTag.appendChild(document.createTextNode(estiloAPG));
+        document.head.appendChild(styleTag);
+    }
+    
+    function actualizarIconosAPG() {
+		$('.wc-block-components-shipping-rates-control input[type="radio"][name^="radio-control-"]').each(function() {
 			const $input = $(this);
-			const valor  = $input.val(); // ej. "apg_shipping:2"
+			const valor  = $input.val();
 			const $label = $input.closest('label').find('.wc-block-components-radio-control__label');
 
-			if ( ! valor || $input.data('apg-cargado') ) return;
+            if ( ! valor || $label.attr('data-apg-cargado') === '1' ) return;
+            
+            $label.attr('data-apg-cargado', '1');
 
 			$.post(apg_shipping.ajax_url, {
 				action: 'apg_shipping_ajax_datos',
@@ -23,7 +39,7 @@ jQuery(function($) {
 				if ( d.muestra === 'delante' ) {
 					html = icono + " " + d.titulo;
 				} else if ( d.muestra === 'detras' ) {
-					html = d.titulo + icono;
+					html = d.titulo + " " + icono;
 				} else if ( d.muestra === 'solo' ) {
 					html = icono;
 				} else {
@@ -35,7 +51,6 @@ jQuery(function($) {
 				}
 
 				$label.html(html);
-				$input.data('apg-cargado', true);
 			});
 		});
 	}
@@ -44,5 +59,5 @@ jQuery(function($) {
 	const observer = new MutationObserver(actualizarIconosAPG);
 	observer.observe(document.body, { childList: true, subtree: true });
 
-	actualizarIconosAPG();
+	actualizarIconosAPG();      
 });
