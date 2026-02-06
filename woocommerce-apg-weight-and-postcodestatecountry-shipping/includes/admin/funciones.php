@@ -24,6 +24,7 @@ defined( 'ABSPATH' ) || exit;
  * @param WC_Shipping_Rate $metodo Objeto del método de envío.
  * @return string Etiqueta final personalizada con icono, precio y datos extra.
  */
+if ( ! function_exists( 'apg_shipping_icono' ) ) {
 function apg_shipping_icono( $etiqueta, $metodo ) {
     // Previene errores.
     if ( ! isset( $metodo->instance_id ) || ! isset( $metodo->cost ) ) {
@@ -113,7 +114,10 @@ function apg_shipping_icono( $etiqueta, $metodo ) {
 
     return $nueva_etiqueta;
 }
-add_filter( 'woocommerce_cart_shipping_method_full_label', 'apg_shipping_icono', PHP_INT_MAX, 2 );
+}
+if ( function_exists( 'apg_shipping_icono' ) ) {
+    add_filter( 'woocommerce_cart_shipping_method_full_label', 'apg_shipping_icono', PHP_INT_MAX, 2 );
+}
 	
 /**
  * Añade la clase principal del método de envío APG Shipping a los métodos disponibles de WooCommerce.
@@ -168,42 +172,54 @@ add_filter( 'woocommerce_available_payment_gateways', 'apg_shipping_filtra_medio
  * @return void
  */
 function apg_shipping_toma_de_datos() {
-    // Obtiene los métodos de pago.
-    $medios_de_pago = get_transient( 'apg_shipping_metodos_de_pago' );
-    if ( false === $medios_de_pago || ! is_array( $medios_de_pago ) || empty( $medios_de_pago ) ) {
-        $medios_de_pago = [];
-        $gateways       = WC()->payment_gateways()->get_available_payment_gateways();
+    global $apg_shipping_collecting_data;
+    global $apg_shipping_loading_shipping_methods;
 
-        foreach ( $gateways as $gateway ) {
-            $medios_de_pago[ $gateway->id ] = $gateway->get_title();
+    if ( ! empty( $apg_shipping_collecting_data ) ) {
+        return;
+    }
+    $apg_shipping_collecting_data = true;
+
+        // Obtiene los métodos de pago.
+        try {
+        $medios_de_pago = get_transient( 'apg_shipping_metodos_de_pago' );
+        if ( empty( $apg_shipping_loading_shipping_methods ) && ( false === $medios_de_pago || ! is_array( $medios_de_pago ) || empty( $medios_de_pago ) ) ) {
+            $medios_de_pago = [];
+            $gateways       = WC()->payment_gateways()->get_available_payment_gateways();
+
+            foreach ( $gateways as $gateway ) {
+                $medios_de_pago[ $gateway->id ] = $gateway->get_title();
+            }
+
+            set_transient( 'apg_shipping_metodos_de_pago', $medios_de_pago, 30 * DAY_IN_SECONDS ); // Guarda la caché durante un mes.
         }
 
-        set_transient( 'apg_shipping_metodos_de_pago', $medios_de_pago, 30 * DAY_IN_SECONDS ); // Guarda la caché durante un mes.
-    }
+        // Obtiene las zonas de envío.
+        $zonas_de_envio = get_transient( 'apg_shipping_zonas_de_envio' );
+        if ( false === $zonas_de_envio ) {
+            $zonas_de_envio = [];
+            foreach ( WC_Shipping_Zones::get_zones() as $zona ) {
+                $metodos    = [];
+                foreach ( $zona[ 'shipping_methods' ] as $metodo ) {
+                    $metodos[]      = [
+                        'id'           => $metodo->id,
+                        'instance_id'  => $metodo->instance_id,
+                        'method_id'    => is_object( $metodo ) && method_exists( $metodo, 'get_method_id' ) && $metodo->get_method_id() ? $metodo->get_method_id() : ( isset( $metodo->id ) ? $metodo->id : '' ),
+                        'title'        => isset( $metodo->instance_settings[ 'title' ] ) ? $metodo->instance_settings[ 'title' ] : $metodo->get_method_title(),
+                    ];
+                }
 
-    // Obtiene las zonas de envío.
-    $zonas_de_envio = get_transient( 'apg_shipping_zonas_de_envio' );
-    if ( false === $zonas_de_envio ) {
-        $zonas_de_envio = [];
-        foreach ( WC_Shipping_Zones::get_zones() as $zona ) {
-            $metodos    = [];
-            foreach ( $zona[ 'shipping_methods' ] as $metodo ) {
-                $metodos[]      = [
-                    'id'           => $metodo->id,
-                    'instance_id'  => $metodo->instance_id,
-                    'method_id'    => is_object( $metodo ) && method_exists( $metodo, 'get_method_id' ) && $metodo->get_method_id() ? $metodo->get_method_id() : ( isset( $metodo->id ) ? $metodo->id : '' ),
-                    'title'        => isset( $metodo->instance_settings[ 'title' ] ) ? $metodo->instance_settings[ 'title' ] : $metodo->get_method_title(),
+                $zonas_de_envio[]   = [
+                    'id'               => $zona[ 'id' ],
+                    'zone_name'        => $zona[ 'zone_name' ],
+                    'shipping_methods' => $metodos,
                 ];
             }
 
-            $zonas_de_envio[]   = [
-                'id'               => $zona[ 'id' ],
-                'zone_name'        => $zona[ 'zone_name' ],
-                'shipping_methods' => $metodos,
-            ];
+            set_transient( 'apg_shipping_zonas_de_envio', $zonas_de_envio, 30 * DAY_IN_SECONDS ); // Guarda la caché durante un mes.
         }
-
-        set_transient( 'apg_shipping_zonas_de_envio', $zonas_de_envio, 30 * DAY_IN_SECONDS ); // Guarda la caché durante un mes.
+    } finally {
+        $apg_shipping_collecting_data = false;
     }
 }
 
@@ -234,16 +250,33 @@ add_action( 'init', 'apg_shipping_condicional_toma_de_datos', 5 );
  * @return array Paquetes de envío filtrados.
  */
 function apg_shipping_gestiona_envios( $envios ) {
-    $apg_shipping_settings  = apg_shipping_dame_configuracion();
+    $id = [];
 
-    if ( isset( $apg_shipping_settings[ 'envio' ] ) && is_array( $apg_shipping_settings[ 'envio' ] ) && !empty( $apg_shipping_settings[ 'envio' ] ) ) {
+    if ( function_exists( 'WC' ) && WC()->session ) {
+        $chosen = WC()->session->get( 'chosen_shipping_methods' );
+        if ( ! empty( $chosen ) && isset( $chosen[ 0 ] ) ) {
+            $id = explode( ':', $chosen[ 0 ] );
+        }
+    }
+    // phpcs:ignore WordPress.Security.NonceVerification.Missing
+    if ( empty( $id ) && isset( $_POST[ 'shipping_method' ][ 0 ] ) ) {
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $id = explode( ':', sanitize_text_field( wp_unslash( $_POST[ 'shipping_method' ][ 0 ] ) ) );
+    }
+
+    if ( ! isset( $id[ 1 ] ) ) {
+        return $envios;
+    }
+
+    $opcion = get_option( 'woocommerce_apg_shipping_' . absint( $id[ 1 ] ) . '_settings' );
+    $apg_shipping_settings = is_array( $opcion ) ? $opcion : maybe_unserialize( $opcion );
+    
+    if ( isset( $apg_shipping_settings[ 'envio' ] ) && is_array( $apg_shipping_settings[ 'envio' ] ) && ! empty( $apg_shipping_settings[ 'envio' ] ) ) {
         if ( isset( $envios[ 0 ][ 'rates' ] ) ) {
             foreach ( $envios[ 0 ][ 'rates' ] as $clave => $envio ) {
-                $instance_id = $envio->instance_id;
-
-                foreach ( $apg_shipping_settings[ 'envio' ] as $metodo ) {
+                foreach( $apg_shipping_settings[ 'envio' ] as $metodo ) {
                     if ( $metodo !== 'todos' ) {
-                        if ( $metodo === 'ninguno' || ! in_array( $instance_id, $apg_shipping_settings[ 'envio' ], true ) ) {
+                        if ( ( $metodo === 'ninguno' && $id[ 1 ] != $envio->instance_id ) || ( ! in_array( $envio->instance_id, $apg_shipping_settings[ 'envio' ] ) && $id[ 1 ] != $envio->instance_id ) ) {
                             unset( $envios[ 0 ][ 'rates' ][ $clave ] );
                         }
                     }
@@ -402,3 +435,86 @@ function apg_shipping_borra_cache_atributos() {
 add_action( 'woocommerce_attribute_added', 'apg_shipping_borra_cache_atributos', 10 );
 add_action( 'woocommerce_attribute_updated', 'apg_shipping_borra_cache_atributos', 10 );
 add_action( 'woocommerce_attribute_deleted', 'apg_shipping_borra_cache_atributos', 10 );
+
+/**
+ * Envía una respuesta JSON y termina la ejecución.
+ *
+ * @param mixed $data        Datos a serializar como JSON.
+ * @param int   $status_code Código HTTP a devolver. Por defecto 200.
+ *
+ * @return void
+ */
+function apg_shipping_ajax_json( $data, $status_code = 200 ) {
+	if ( ! headers_sent() ) {
+		status_header( $status_code );
+		header( 'Content-Type: application/json; charset=' . get_option( 'blog_charset' ) );
+	}
+
+	echo wp_json_encode( $data );
+	wp_die();
+}
+
+/**
+ * Endpoint AJAX para búsquedas paginadas de términos en selects grandes.
+ *
+ * Fuentes soportadas vía `$_GET['source']`:
+ * - 'categories'  → taxonomy: product_cat
+ * - 'tags'        → taxonomy: product_tag
+ * - 'classes'     → taxonomy: product_shipping_class
+ * - 'attributes'  → todas las taxonomías de atributos (wc_get_attribute_taxonomy_names)
+ *
+ * @return void
+ */
+function apg_shipping_ajax_search_terms() {
+	check_ajax_referer( 'apg_ajax_terms', 'nonce' );
+	if ( ! current_user_can( 'manage_woocommerce' ) ) {
+		apg_shipping_ajax_json( [ 'results' => [] ], 403 );
+	}
+
+	$source = isset( $_GET['source'] ) ? sanitize_key( wp_unslash( $_GET['source'] ) ) : '';
+	$q      = isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '';
+	$page   = isset( $_GET['page'] ) ? max( 1, absint( $_GET['page'] ) ) : 1;
+	$per    = 50;
+	$args   = [
+		'hide_empty' => false,
+		'search'     => $q,
+		'number'     => $per,
+		'offset'     => ( $page - 1 ) * $per,
+		'orderby'    => 'name',
+		'order'      => 'ASC',
+	];
+
+	$taxonomies = [];
+	switch ( $source ) {
+		case 'categories':
+			$taxonomies = [ 'product_cat' ];
+			break;
+		case 'tags':
+			$taxonomies = [ 'product_tag' ];
+			break;
+		case 'classes':
+			$taxonomies = [ 'product_shipping_class' ];
+			break;
+		case 'attributes':
+			$taxonomies = function_exists( 'wc_get_attribute_taxonomy_names' ) ? wc_get_attribute_taxonomy_names() : [];
+			break;
+		default:
+			apg_shipping_ajax_json( [ 'results' => [] ] );
+	}
+
+	$terms = get_terms( [ 'taxonomy' => $taxonomies ] + $args );
+	if ( is_wp_error( $terms ) ) {
+		apg_shipping_ajax_json( [ 'results' => [] ] );
+	}
+
+	$results = [];
+	foreach ( $terms as $t ) {
+		$results[] = [
+			'id'   => (string) $t->term_id,
+			'text' => $t->name . ( $t->taxonomy ? ' (' . $t->taxonomy . ')' : '' ),
+		];
+	}
+
+	apg_shipping_ajax_json( [ 'results' => $results, 'pagination' => [ 'more' => count( $terms ) === $per ] ] );
+}
+add_action( 'wp_ajax_apg_shipping_search_terms', 'apg_shipping_ajax_search_terms' );
